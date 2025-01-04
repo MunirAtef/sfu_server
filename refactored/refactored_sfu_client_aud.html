@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC SFU Audio Call</title>
+</head>
+<body>
+    <h1>WebRTC SFU Audio Call</h1>
+    <div>
+        <label for="room">Room ID:</label>
+        <input type="text" id="room" placeholder="Enter Room ID">
+        <button id="join">Join Room</button>
+    </div>
+    <div>
+        <h2>Local Audio</h2>
+        <audio id="localAudio" autoplay controls></audio>
+    </div>
+    <div>
+        <h2>Remote Audios</h2>
+        <div id="remoteAudios"></div>
+    </div>
+
+    <script>
+        const serverUrl = 'ws://localhost:5000'; // Change to wss:// if using HTTPS
+        let ws;
+        let peerConnection;
+        let localStream;
+        const remoteStreams = new Map();
+
+        const roomInput = document.getElementById('room');
+        const joinButton = document.getElementById('join');
+        const localAudio = document.getElementById('localAudio');
+        const remoteAudiosContainer = document.getElementById('remoteAudios');
+
+        joinButton.addEventListener('click', async () => {
+            const roomId = roomInput.value.trim();
+            if (!roomId) {
+                alert('Please enter a room ID');
+                return;
+            }
+
+            ws = new WebSocket(serverUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                ws.send(JSON.stringify({ type: 'joinRoom', roomId, username: `User_${Math.random().toString(36).substring(7)}` }));
+            };
+
+            ws.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                console.log('Received:', message);
+
+                switch (message.type) {
+                    case 'welcome':
+                        console.log('Connected with ID:', message.id);
+                        break;
+
+                    case 'roomJoined':
+                        console.log('Joined room:', message.roomId);
+                        await startLocalStream();
+                        break;
+
+                    case 'newProducer':
+                        console.log('New producer:', message.id);
+                        await consumeStream(message.id);
+                        break;
+
+                    case 'answer':
+                        console.log('Answer received');
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                        break;
+
+                    case 'consume':
+                        console.log('Consuming stream:', message.id);
+                        const consumerPeer = createPeerConnection();
+                        await consumerPeer.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                        const consumerAnswer = await consumerPeer.createAnswer();
+                        await consumerPeer.setLocalDescription(consumerAnswer);
+
+                        ws.send(JSON.stringify({
+                            type: 'consumer_ice',
+                            consumerId: message.consumerId,
+                            sdp: consumerPeer.localDescription
+                        }));
+
+                        consumerPeer.ontrack = (event) => {
+                            addRemoteStream(message.id, event.streams[0]);
+                        };
+                        break;
+
+                    case 'user_left':
+                        console.log('User left:', message.id);
+                        removeRemoteStream(message.id);
+                        break;
+
+                    default:
+                        console.log('Unknown message:', message);
+                }
+            };
+
+            ws.onclose = () => console.log('WebSocket closed');
+            ws.onerror = (error) => console.error('WebSocket error:', error);
+        });
+
+        async function startLocalStream() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                localAudio.srcObject = localStream;
+
+                peerConnection = createPeerConnection();
+
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
+                ws.send(JSON.stringify({
+                    type: 'connect',
+                    uqid: ws.id,
+                    sdp: peerConnection.localDescription
+                }));
+            } catch (error) {
+                console.error('Error starting local stream:', error);
+            }
+        }
+
+        function createPeerConnection() {
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            });
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({
+                        type: 'ice',
+                        uqid: ws.id,
+                        ice: event.candidate
+                    }));
+                }
+            };
+
+            return pc;
+        }
+
+        async function consumeStream(producerId) {
+            const consumerId = `consumer_${producerId}_${Date.now()}`;
+            ws.send(JSON.stringify({
+                type: 'consume',
+                id: producerId,
+                consumerId,
+                sdp: await peerConnection.createOffer()
+            }));
+        }
+
+        function addRemoteStream(id, stream) {
+            if (remoteStreams.has(id)) return;
+
+            const audio = document.createElement('audio');
+            audio.id = `remote_${id}`;
+            audio.srcObject = stream;
+            audio.autoplay = true;
+            audio.controls = true;
+
+            remoteStreams.set(id, stream);
+            remoteAudiosContainer.appendChild(audio);
+        }
+
+        function removeRemoteStream(id) {
+            remoteStreams.delete(id);
+            const audio = document.getElementById(`remote_${id}`);
+            if (audio) {
+                remoteAudiosContainer.removeChild(audio);
+            }
+        }
+    </script>
+</body>
+</html>

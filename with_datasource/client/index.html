@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFU Server</title>
+    <style>
+        .form {
+            display: flex;
+            gap: 10px;
+            flex-direction: column;
+            justify-content: center;
+            align-items: start;
+        }
+        label {
+            width: 100px;
+        }
+        input[type = text] {
+            padding: 5px 10px;
+        }
+        .speaking {
+            border-radius: 50px;
+            box-shadow: 0 0 0 3px #00ff00;
+        }
+        .audioWrap {
+            margin: 0 20px;
+            border-bottom: 1px solid black;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        .display_name {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h2>Testing SFU Server</h2>
+    <div class="form">
+        <label for="roomId">RoomID</label>
+        <input type="text" id="roomId" placeholder="Enter roomId" value="munir_room" />
+
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter your username" />
+
+        <label for="role">Role</label>
+        <select id="role" name="role">
+            <option value="speaker" selected>Speaker</option>
+            <option value="listener">Listener</option>
+        </select>
+
+        <div>
+            <button id="connect" >Connect</button>
+            <button id="setRole" disabled>Set Role</button>
+        </div>
+    </div>
+    <br/>
+
+
+    <H3>RemoteAudios</H3>
+    <div id="remote_audios">
+        <div id="audio_inner">
+<!--            <div class="audioWrap"><audio controls></audio><div class="display_name">Munir</div></div>-->
+        </div>
+    </div>
+
+    <script>
+        const roomIdInput = document.getElementById("roomId");
+        const usernameInput = document.getElementById("username");
+        const roleSelect = document.getElementById("role");
+        const remoteContainer = document.getElementById('remote_audios');
+        const audioInnerDiv = document.getElementById('audio_inner');
+        const setRoleButton = document.getElementById('setRole');
+    </script>
+
+    <script src="./constants.js"></script>
+    <script src="script.js"></script>
+    <script>
+        const connectButton = document.getElementById('connect');
+        const sfuClient = new SimpleSFUClient();
+
+        connectButton.addEventListener('click', () => sfuClient.connect())
+        setRoleButton.addEventListener('click', () => sfuClient.setRole())
+
+        sfuClient.on('onConnected', () => {
+            connectButton.disabled = true;
+            setRoleButton.disabled = false;
+        });
+    </script>
+</body>
+</html>

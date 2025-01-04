@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC SFU Client</title>
+</head>
+<body>
+    <h1>WebRTC SFU Client</h1>
+<!--    <div>-->
+<!--        <label for="userId">User ID:</label>-->
+<!--        <input type="text" id="userId" placeholder="Enter User ID">-->
+<!--        <button id="connect">Connect</button>-->
+<!--    </div>-->
+    <div>
+        <label for="room">Room ID:</label>
+        <input type="text" id="room" placeholder="Enter Room ID" value="munir_room">
+        <button id="join">Join Room</button>
+    </div>
+
+
+    <div>
+        <h2>Local Stream</h2>
+        <video id="localVideo" autoplay muted></video>
+    </div>
+    <div>
+        <h2>Remote Streams</h2>
+        <div id="remoteStreams"></div>
+    </div>
+
+    <script>
+        const serverUrl = 'ws://localhost:5000'; // Change to wss:// if using HTTPS
+        let ws;
+        let peerConnection;
+        let localStream;
+        const remoteStreams = new Map();
+        const remotePeers = new Map();
+        let userId = `User_${Math.random().toString(36).substring(7)}`;
+        let uqid;
+
+        // const userIdInput = document.getElementById('userId');
+        // const connectButton = document.getElementById('connect');
+        const roomInput = document.getElementById('room');
+        const joinButton = document.getElementById('join');
+        const localVideo = document.getElementById('localVideo');
+        const remoteStreamsContainer = document.getElementById('remoteStreams');
+
+        // connectButton.addEventListener('click', async () => {
+        //     // userId = userIdInput.value.trim();
+        //     if (!userId) {
+        //         alert('Please enter a user ID');
+        //         return;
+        //     }
+        //
+        //     const roomId = roomInput.value.trim();
+        //     if (!roomId) {
+        //         alert('Please enter a room ID');
+        //         return;
+        //     }
+        //
+        //     ws = new WebSocket(serverUrl);
+        //
+        //     ws.onopen = () => {
+        //         console.log('WebSocket connected');
+        //         ws.send(JSON.stringify({ type: 'joinRoom', roomId, username: userId }));
+        //     };
+        //
+        //     ws.onmessage = async (event) => {
+        //         const message = JSON.parse(event.data);
+        //         console.log('Received:', message);
+        //
+        //         switch (message.type) {
+        //             case 'welcome':
+        //                 console.log('Connected with ID:', message.id);
+        //                 break;
+        //
+        //             case 'roomJoined':
+        //                 console.log('Joined room:', message.roomId);
+        //                 await startLocalStream();
+        //                 break;
+        //
+        //             case 'newProducer':
+        //                 console.log('New producer:', message.id);
+        //                 await consumeStream(message.id);
+        //                 break;
+        //
+        //             case 'answer':
+        //                 console.log('Answer received');
+        //                 await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+        //                 break;
+        //
+        //             case 'consume':
+        //                 console.log('Consuming stream:', message.id);
+        //                 const consumerPeer = createPeerConnection();
+        //                 await consumerPeer.setRemoteDescription(new RTCSessionDescription(message.sdp));
+        //                 const consumerAnswer = await consumerPeer.createAnswer();
+        //                 await consumerPeer.setLocalDescription(consumerAnswer);
+        //
+        //                 ws.send(JSON.stringify({
+        //                     type: 'consumer_ice',
+        //                     consumerId: message.consumerId,
+        //                     sdp: consumerPeer.localDescription
+        //                 }));
+        //
+        //                 consumerPeer.ontrack = (event) => {
+        //                     addRemoteStream(message.id, event.streams[0]);
+        //                 };
+        //                 break;
+        //
+        //             case 'user_left':
+        //                 console.log('User left:', message.id);
+        //                 removeRemoteStream(message.id);
+        //                 break;
+        //
+        //             default:
+        //                 console.log('Unknown message:', message);
+        //         }
+        //     };
+        //
+        //     ws.onclose = () => console.log('WebSocket closed');
+        //     ws.onerror = (error) => console.error('WebSocket error:', error);
+        // });
+
+        joinButton.addEventListener('click', async () => {
+            const roomId = roomInput.value.trim();
+            if (!roomId) {
+                alert('Please enter a room ID');
+                return;
+            }
+
+            ws = new WebSocket(serverUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                ws.send(JSON.stringify({ type: 'joinRoom', roomId, username: userId }));
+            };
+
+            ws.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                console.log('Received:', message);
+
+                switch (message.type) {
+                    case 'welcome':
+                        uqid = message.id;
+                        console.log('Connected with ID:', message.id);
+                        break;
+
+                    case 'roomJoined':
+                        console.log('Joined room:', message.roomId);
+                        // let sdp = ;
+                        // ws.send(JSON.stringify({type: "connect", uqid: userId, sdp}))
+                        await startLocalStream();
+                        break;
+
+                    case 'newProducer':
+                        console.log('New producer:', message.id);
+                        await consumeStream(message.id);
+                        break;
+
+                    case 'answer':
+                        console.log('Answer received');
+                        // await peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                        console.log(message);
+                        await peerConnection.setRemoteDescription(message.sdp);
+                        break;
+
+                    case 'consumeAnswer':
+                        console.log('Consuming stream:', message.producerId);
+
+                        // const consumerPeer = createPeerConnectionForConsuming();
+                        // await consumerPeer.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                        // const consumerAnswer = await consumerPeer.createAnswer();
+                        // await consumerPeer.setLocalDescription(consumerAnswer);
+
+                        const peer = remotePeers.get(message.producerId);
+                        peer.setRemoteDescription(new RTCSessionDescription(message.sdp));
+
+                          console.log(`peer:`);
+                          console.log(peer);
+                          peer.ontrack = (event) => {
+                            addRemoteStream(message.id, event.streams[0]);
+                          };
+
+                        // ws.send(JSON.stringify({
+                        //     type: 'consumer_ice',
+                        //     consumerId: message.consumerId,
+                        //     sdp: consumerPeer.localDescription
+                        // }));
+
+                          // peer.ontrack = (event) => {
+                          //       addRemoteStream(message.id, event.streams[0]);
+                          //   };
+                        break;
+
+                    // case 'consumeAnswer':
+                    //     console.log('Consuming stream:', message.id);
+                    //     const consumerPeer = createPeerConnectionForConsuming();
+                    //     await consumerPeer.setRemoteDescription(new RTCSessionDescription(message.sdp));
+                    //     const consumerAnswer = await consumerPeer.createAnswer();
+                    //     await consumerPeer.setLocalDescription(consumerAnswer);
+                    //
+                    //     ws.send(JSON.stringify({
+                    //         type: 'consumer_ice',
+                    //         consumerId: message.consumerId,
+                    //         sdp: consumerPeer.localDescription
+                    //     }));
+                    //
+                    //     consumerPeer.ontrack = (event) => {
+                    //         addRemoteStream(message.id, event.streams[0]);
+                    //     };
+                    //     break;
+
+                    case 'user_left':
+                        console.log('User left:', message.id);
+                        removeRemoteStream(message.id);
+                        break;
+
+                    default:
+                        console.log('Unknown message:', message);
+                }
+            };
+
+            ws.onclose = () => console.log('WebSocket closed');
+            ws.onerror = (error) => console.error('WebSocket error:', error);
+        });
+
+        async function startLocalStream() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+
+                peerConnection = createPeerConnection();
+
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
+
+                ws.send(JSON.stringify({
+                    type: 'connect',
+                    uqid, //: ws.id,
+                    sdp: peerConnection.localDescription
+                }));
+            } catch (error) {
+                console.error('Error starting local stream:', error);
+            }
+        }
+
+        function createPeerConnection() {
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            });
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({
+                        type: 'ice',
+                        uqid, //: ws.id,
+                        ice: event.candidate
+                    }));
+                }
+            };
+
+            return pc;
+        }
+
+        function createPeerConnectionForConsuming() {
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            });
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({
+                        type: 'consumer_ice',
+                        uqid, //: ws.id,
+                        ice: event.candidate
+                    }));
+                }
+            };
+
+            return pc;
+        }
+
+        async function consumeStream(producerId) {
+            // console.log(`${producerId} ===================== ${peer} =============== ${ws.id}`);
+            if (producerId === uqid) return;
+
+            let newPeer = createPeerConnectionForConsuming();
+            const offer = await newPeer.createOffer();
+            await newPeer.setLocalDescription(offer);
+            remotePeers.set(producerId, newPeer);
+
+            const consumerId = `consumer_${producerId}_${Date.now()}`;
+            ws.send(JSON.stringify({
+                type: 'consume',
+                producerId,
+                consumerId,
+                sdp: offer
+            }));
+        }
+
+        function addRemoteStream(id, stream) {
+            if (remoteStreams.has(id)) return;
+
+            const video = document.createElement('video');
+            video.id = `remote_${id}`;
+            video.srcObject = stream;
+            video.autoplay = true;
+
+            remoteStreams.set(id, stream);
+            remoteStreamsContainer.appendChild(video);
+        }
+
+        function removeRemoteStream(id) {
+            remoteStreams.delete(id);
+            const video = document.getElementById(`remote_${id}`);
+            if (video) {
+                remoteStreamsContainer.removeChild(video);
+            }
+        }
+    </script>
+</body>
+</html>
