@@ -1,7 +1,3 @@
-
-
-// sfu server
-
 'use strict'
 
 const webrtc = require("wrtc");
@@ -22,6 +18,9 @@ app.use(express.static('with_datasource/client/'));
 app.get('/:filename', (req, res) => {
   const filename = req.params.filename;
   res.sendFile(path.join(__dirname, '..', 'client', filename));
+});
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'client', 'bundle.html'));
 });
 
 
@@ -96,24 +95,10 @@ function notifyOtherRoomUsers(roomId, userId, payload) {
 
 const wss = new WebSocketServer({ server: webServer });
 
-// ============================== Attach TURN server =================================
-// const turnServer = new Turn({
-//   authMech: 'long-term',
-//   credentials: {
-//     username: 'munir123456',
-//   },
-//   server: webServer, // Attach TURN to the existing server
-// });
-//
-// turnServer.addUser("munir_m_atef", "munir123456");
-// turnServer.start();
-// ===================================================================================
-
-
 wss.on('connection', function (ws, req) {
   let userId = uuid();
   ws.id = userId;
-  ws.send(JSON.stringify({ type: clientMethods.welcome, id: userId }));
+  ws.send(JSON.stringify({ type: clientMethods.welcome, id: userId, configuration }));
   const queryParams = url.parse(req.url, true).query;
   const roomId = queryParams.roomId;
 
@@ -161,25 +146,28 @@ wss.on('connection', function (ws, req) {
 
           break;
         }
-        case serverMethods.getPublishers:
+        case serverMethods.getPublishers: {
           const pubs = datastore.getRoomPublishers(roomId, userId);
 
           const publishersPayload = {
             type: clientMethods.publishers,
-            publishers: pubs.map((user) => { return {id: user.id, username: user.username} })
+            publishers: pubs.map((user) => {
+              return {id: user.id, username: user.username}
+            })
           }
 
           ws.send(JSON.stringify(publishersPayload));
           break;
+        }
         case serverMethods.ice: {
           const user = datastore.getUser(userId, roomId);
           if (user.peer)
             user.peer.addIceCandidate(new webrtc.RTCIceCandidate(body.ice)).catch(e => console.log(e));
           break;
         }
-        case serverMethods.subscribe:
+        case serverMethods.subscribe: {
           try {
-            let { pubId, sdp } = body;
+            let {pubId, sdp} = body;
             const remoteUser = datastore.getUser(pubId, roomId);
             const newPeer = createPeer();
             datastore.addSubscriber(roomId, userId, pubId, newPeer);
@@ -204,13 +192,16 @@ wss.on('connection', function (ws, req) {
           }
 
           break;
-        case serverMethods.consumerIce:
+        }
+        case serverMethods.consumerIce: {
           const pubId = body.pubId;
           const peer = datastore.getSubscriberPeer(roomId, userId, pubId);
           peer.addIceCandidate(new webrtc.RTCIceCandidate(body.ice)).catch(e => console.log(e));
           break;
-        default:
+        }
+        default: {
           console.log(`UnknownMessage: ${message}`);
+        }
       }
     } catch (e) {
       console.log(`Exception: ${e}`)

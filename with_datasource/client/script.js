@@ -27,10 +27,10 @@ class SimpleSFUClient {
     this.settings = Object.assign({}, defaultSettings, options);
     this.eventListeners = new Map();
     this.connection = null;
+    this.configuration = null;
 
     this.publishers = new Map();
 
-    this.publishersTemp = [];
     this.localPeer = null;
     this.localUUID = null;
     this.localStream = null;
@@ -41,10 +41,12 @@ class SimpleSFUClient {
 
   async initWebSocket() {
     const roomId = roomIdInput.value.trim();
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const hostname = window.location.hostname;
-    const port = hostname === 'localhost' ? `:${this.settings.port}` : '';
-    const url = `${protocol}://${hostname}${port}?roomId=${roomId}`;
+    // const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    // const hostname = window.location.hostname;
+    // const port = hostname === 'localhost' ? `:${this.settings.port}` : '';
+    // let url = `${protocol}://${hostname}${port}?roomId=${roomId}`;
+    let url = `ws://188.245.96.46:5000?roomId=${roomId}`;
+    // url = `${protocol}://precise-albacore-simply.ngrok-free.app?roomId=${roomId}`;
     this.connection = new WebSocket(url);
 
     this.connection.onmessage = (data) => this.handleMessage(data);
@@ -166,7 +168,7 @@ class SimpleSFUClient {
   }
 
   async createConsumeTransport(publisher) {
-    const consumerTransport = new RTCPeerConnection(configuration);
+    const consumerTransport = new RTCPeerConnection(this.configuration);
     DEFINED_PEERS++;
     this.publishers.get(publisher.id).peer = consumerTransport;
     consumerTransport.addTransceiver('audio', { direction: "recvonly" })
@@ -197,8 +199,7 @@ class SimpleSFUClient {
     if (publishers.length > 0) {
       for (const publisher of publishers) {
         const id = publisher.id;
-        if (this.publishersTemp.includes(id)) return;
-        this.publishersTemp.push(id);
+        if (this.publishers.has(id)) return;
         this.publishers.set(id, { username: publisher.username });
         await this.subscribeOnce(publisher);
       }
@@ -213,11 +214,9 @@ class SimpleSFUClient {
   async handleNewPublisher({ id: publisherId, username }) {
     console.log(publisherId);
     console.log(username);
-    console.log(this.publishersTemp);
     console.log(".......................................................")
 
-    if (publisherId === this.localUUID || this.publishersTemp.includes(publisherId)) return;
-    this.publishersTemp.push(publisherId)
+    if (publisherId === this.localUUID || this.publishers.has(publisherId)) return;
     this.publishers.set(publisherId, { username });
     await this.subscribeOnce({ id: publisherId, username });
   }
@@ -228,6 +227,7 @@ class SimpleSFUClient {
     switch (message.type) {
       case clientMethods.welcome:
         this.localUUID = message.id;
+        this.configuration = message.configuration;
         break;
       case clientMethods.answer:
         this.handleAnswer(message);
@@ -248,9 +248,7 @@ class SimpleSFUClient {
   }
 
   removePublisher({ id }) {
-    if (!this.publishers.has(id) && !this.publishersTemp.includes(id)) return;
-    this.publishers.delete(id);
-    this.publishersTemp = this.publishersTemp.filter(item => item !== id);
+    if (!this.publishers.has(id)) return;
     this.publishers.delete(id);
 
     document.getElementById(`remote_${id}`).srcObject.getTracks().forEach(track => track.stop());
@@ -283,7 +281,7 @@ class SimpleSFUClient {
   }
 
   createPeer(isConnect) {
-    this.localPeer = new RTCPeerConnection(configuration);
+    this.localPeer = new RTCPeerConnection(this.configuration);
     DEFINED_PEERS++;
     this.localPeer.onicecandidate = (e) => this.handleIceCandidate(e);
     this.localPeer.onnegotiationneeded = () => this.handleNegotiation(isConnect);

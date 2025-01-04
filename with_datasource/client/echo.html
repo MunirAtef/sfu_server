@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metered Cloud SFU Echo Example</title>
+</head>
+<body>
+
+    <strong>Local User</strong>
+    <p>
+        Displaying the live camera feed of the local user. This video feed will be sent to the Metered Global Cloud SFU.
+    </p>
+    <!-- In this video tag, we will show the user's local video -->
+    <video id="localVideo" width="320" height="240" muted autoplay></video>
+
+    <strong>Remote Video</strong>
+    <p>
+        We will create a new session and subscribe to the video feed published above. This video feed will come from the Metered Global Cloud SFU and will simulate a remote user viewing the video feed.
+    </p>
+    <!-- In this div, we will add the remote video coming from the SFU -->
+    <div id="remoteVideoContainer">
+    </div>
+
+    <script>
+        (async () => {
+            // Define the host URL and authentication details for the SFU
+            // The host URL is the endpoint for the SFU server
+            // The secret is the authentication token required to interact with the SFU server
+            // The sfuAppId is the unique identifier for the SFU application
+            const host = "https://global.sfu.metered.ca";
+            const sfuAppId = "6778ba8cbbcb77af8f46a0cd";
+            const secret =  "Q8PtoaZzQ3Pk/qI4";
+
+            // Creating a PeerConnection for userA to connect to the SFU
+            // The RTCPeerConnection is used to establish a connection to the SFU
+            // The iceServers array contains the STUN server configuration used for NAT traversal
+            const peerConnectionUserA = new RTCPeerConnection({
+                iceServers: [
+                    {
+                        urls: "stun:stun.metered.ca:80"
+                    }
+                ]
+            });
+
+            // Request access to userA's video device (e.g., webcam)
+            // The getUserMedia function prompts the user for permission to use their video device
+            // The video constraints specify the desired resolution for the video feed
+            const streamUserA = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: 1920,
+                    height: 1080,
+                }
+            });
+
+            // Add each track from the stream to the peer connection to be sent to the SFU
+            // The getTracks function returns an array of MediaStreamTrack objects representing the video tracks
+            // The addTrack function adds each track to the peer connection
+            streamUserA.getTracks().map(track => peerConnectionUserA.addTrack(track, streamUserA));
+
+            // Showing userA's local video
+            // The srcObject property of the video element is set to the MediaStream object
+            // This displays the local video feed in the video element with the id 'localVideo'
+            document.getElementById('localVideo').srcObject = streamUserA;
+
+            // Create an SDP offer for userA
+            // The createOffer function generates an SDP offer for the peer connection
+            // The setLocalDescription function sets the local description of the peer connection to the generated offer
+            const offerSdpUserA = await peerConnectionUserA.createOffer();
+            await peerConnectionUserA.setLocalDescription(offerSdpUserA);
+
+            // Send the SDP offer to the SFU to establish a connection for userA
+            // The fetch function sends a POST request to the SFU server with the SDP offer in the request body
+            // The response from the SFU server contains the session description and session ID
+            const responseUserA = await fetch(host + `/api/sfu/${sfuAppId}/session/new`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${secret}`
+                },
+                body: JSON.stringify({
+                    sessionDescription: offerSdpUserA
+                })
+            });
+
+            // Parse the JSON response from the SFU server
+            const responseJsonUserA = await responseUserA.json();
+            console.log(responseJsonUserA);
+
+            // Obtain the session ID for userA
+            // The session ID is used to identify the session on the SFU server
+            const sessionIdUserA = responseJsonUserA.sessionId;
+
+            // Set the remote description for userA's peer connection
+            // The setRemoteDescription function sets the remote description of the peer connection to the session description received from the SFU server
+            await peerConnectionUserA.setRemoteDescription(responseJsonUserA.sessionDescription);
+
+            // Check if the peer connection state is connected for userA
+            // The oniceconnectionstatechange event is triggered when the ICE connection state changes
+            // If the ICE connection state is 'connected', the startRemoteUserConnection function is called after a 1-second delay
+            peerConnectionUserA.oniceconnectionstatechange = () => {
+                if (peerConnectionUserA.iceConnectionState === 'connected') {
+                    console.log('UserA Connected');
+                    setTimeout(startRemoteUserConnection, 1000);
+                }
+            }
+
+            /**
+             * Function to create a new session and subscribe to the track published by userA
+             */
+            async function startRemoteUserConnection() {
+                // Creating a PeerConnection for userB to connect to the SFU
+                // The RTCPeerConnection is used to establish a connection to the SFU
+                // The iceServers array contains the STUN server configuration used for NAT traversal
+                const peerConnectionUserB = new RTCPeerConnection({
+                    iceServers: [
+                        {
+                            urls: "stun:stun.metered.ca:80"
+                        }
+                    ]
+                });
+
+                // Add a transceiver for video for userB
+                // The addTransceiver function adds a transceiver for the video track
+                // This allows userB to receive the video track from the SFU
+                peerConnectionUserB.addTransceiver('video');
+
+                // Create an SDP offer for userB
+                // The createOffer function generates an SDP offer for the peer connection
+                // The setLocalDescription function sets the local description of the peer connection to the generated offer
+                const offerSdpUserB = await peerConnectionUserB.createOffer();
+                await peerConnectionUserB.setLocalDescription(offerSdpUserB);
+
+                // Handle incoming tracks for userB
+                // The ontrack event is triggered when a new track is received on the peer connection
+                // A new video element is created for each incoming track and added to the 'remoteVideoContainer' div
+                peerConnectionUserB.ontrack = (e) => {
+                    const videoElement = document.createElement('video');
+                    videoElement.srcObject = new MediaStream([e.track]);
+                    videoElement.autoplay = true;
+                    videoElement.controls = true;
+                    document.getElementById('remoteVideoContainer').appendChild(videoElement);
+                }
+
+                // Send the SDP offer to the SFU to establish a connection for userB
+                // The fetch function sends a POST request to the SFU server with the SDP offer in the request body
+                // The response from the SFU server contains the session description and session ID
+                const sessionResponseUserB = await fetch(host + `/api/sfu/${sfuAppId}/session/new`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${secret}`
+                    },
+                    body: JSON.stringify({
+                        sessionDescription: offerSdpUserB
+                    })
+                });
+
+                // Parse the JSON response from the SFU server
+                const sessionResponseJsonUserB = await sessionResponseUserB.json();
+                const sessionIdUserB = sessionResponseJsonUserB.sessionId;
+                await peerConnectionUserB.setRemoteDescription(sessionResponseJsonUserB.sessionDescription);
+
+                // Get the list of tracks from the Remote SFU for userA
+                // The fetch function sends a GET request to the SFU server to retrieve the list of tracks for the session
+                // The response from the SFU server contains the list of tracks
+                const remoteTracksUserA = await fetch(host + `/api/sfu/${sfuAppId}/session/${sessionIdUserA}/tracks`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${secret}`
+                    }
+                });
+
+                // Parse the JSON response from the SFU server
+                const remoteTracksJsonUserA = await remoteTracksUserA.json();
+                console.log(remoteTracksJsonUserA);
+
+                // Subscribe to the remote tracks for userB
+                // The trackIdUserA is the unique identifier for the track published by userA
+                // The fetch function sends a POST request to the SFU server to subscribe to the track
+                // The request body contains the remote session ID and remote track ID
+                const trackIdUserA = remoteTracksJsonUserA[0].trackId;
+                const responseUserB = await fetch(`${host}/api/sfu/${sfuAppId}/session/${sessionIdUserB}/track/subscribe`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${secret}`
+                    },
+                    body: JSON.stringify({
+                        tracks: [
+                            {
+                                "remoteSessionId": sessionIdUserA,
+                                "remoteTrackId": trackIdUserA
+                            }
+                        ]
+                    })
+                });
+
+                // Parse the JSON response from the SFU server
+                const jsonUserB = await responseUserB.json();
+
+                // Set the remote description for userB's peer connection
+                // The setRemoteDescription function sets the remote description of the peer connection to the session description received from the SFU server
+                await peerConnectionUserB.setRemoteDescription(new RTCSessionDescription(jsonUserB.sessionDescription));
+                const answerUserB = await peerConnectionUserB.createAnswer();
+                await peerConnectionUserB.setLocalDescription(answerUserB);
+
+                // Renegotiate the session for userB
+                // The fetch function sends a PUT request to the SFU server to renegotiate the session
+                // The request body contains the session description generated by the createAnswer function
+                await fetch(`${host}/api/sfu/${sfuAppId}/session/${sessionIdUserB}/renegotiate`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${secret}`
+                    },
+                    body: JSON.stringify({
+                        sessionDescription: answerUserB
+                    })
+                });
+            }
+        })();
+    </script>
+
+</body>
+</html>

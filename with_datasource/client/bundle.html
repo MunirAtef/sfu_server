@@ -58,7 +58,7 @@
 <br/>
 
 
-<H3>RemoteAudios</H3>
+<h3>RemoteAudios</h3>
 <div id="remote_audios">
     <div id="audio_inner">
         <!--            <div class="audioWrap"><audio controls></audio><div class="display_name">Munir</div></div>-->
@@ -73,7 +73,6 @@
   const audioInnerDiv = document.getElementById('audio_inner');
   const setRoleButton = document.getElementById('setRole');
 
-  const serverUrl = ``;
 
   const roles = {
     speaker: 'speaker',
@@ -98,32 +97,6 @@
     subscribe: 'subscribe',
     consumerIce: 'consumerIce'
   };
-
-  const configuration = {
-    iceServers: [
-      {urls: "stun:stun.relay.metered.ca:80"},
-      {
-        urls: "turn:global.relay.metered.ca:80",
-        username: "941563fc8b5b8e8c1a5424cb",
-        credential: "spoMfi7SzsfGP9bk"
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80?transport=tcp",
-        username:"941563fc8b5b8e8c1a5424cb",
-        credential:"spoMfi7SzsfGP9bk"
-      },
-      {
-        urls: "turn:global.relay.metered.ca:443",
-        username:"941563fc8b5b8e8c1a5424cb",
-        credential:"spoMfi7SzsfGP9bk"
-      },
-      {
-        urls: "turns:global.relay.metered.ca:443?transport=tcp",
-        username:"941563fc8b5b8e8c1a5424cb",
-        credential:"spoMfi7SzsfGP9bk"
-      }
-    ]
-  }
 
   let DEFINED_PEERS = 0;
 
@@ -152,10 +125,10 @@
       this.settings = Object.assign({}, defaultSettings, options);
       this.eventListeners = new Map();
       this.connection = null;
+      this.configuration = null;
 
       this.publishers = new Map();
 
-      this.publishersTemp = [];
       this.localPeer = null;
       this.localUUID = null;
       this.localStream = null;
@@ -167,9 +140,16 @@
     async initWebSocket() {
       const roomId = roomIdInput.value.trim();
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const url = `${protocol}://${window.location.hostname}:${this.settings.port}?roomId=${roomId}`;
-      // const url = `${serverUrl}?roomId=${roomId}`;
-      this.connection = new WebSocket(url);
+      const hostname = window.location.hostname;
+      const port = window.location.port;
+      let url = `${protocol}://${hostname}:${port}?roomId=${roomId}`;
+      let serverUrl = `${protocol}://188.245.96.46:5000?roomId=${roomId}`;
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const useServer = urlParams.get('useServer') === 'true';
+
+      // url = `${protocol}://precise-albacore-simply.ngrok-free.app?roomId=${roomId}`;
+      this.connection = new WebSocket(useServer ? serverUrl : url);
 
       this.connection.onmessage = (data) => this.handleMessage(data);
       this.connection.onclose = () => this.handleClose();
@@ -177,6 +157,12 @@
         this.trigger(_EVENTS.onConnected, event);
       }
       this.trigger(_EVENTS.onReady);
+
+      let tryTimes = 0;
+      while (this.connection.readyState !== WebSocket.OPEN) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        tryTimes++;
+      }
     }
 
 
@@ -284,7 +270,7 @@
     }
 
     async createConsumeTransport(publisher) {
-      const consumerTransport = new RTCPeerConnection(configuration);
+      const consumerTransport = new RTCPeerConnection(this.configuration);
       DEFINED_PEERS++;
       this.publishers.get(publisher.id).peer = consumerTransport;
       consumerTransport.addTransceiver('audio', { direction: "recvonly" })
@@ -315,8 +301,7 @@
       if (publishers.length > 0) {
         for (const publisher of publishers) {
           const id = publisher.id;
-          if (this.publishersTemp.includes(id)) return;
-          this.publishersTemp.push(id);
+          if (this.publishers.has(id)) return;
           this.publishers.set(id, { username: publisher.username });
           await this.subscribeOnce(publisher);
         }
@@ -331,11 +316,9 @@
     async handleNewPublisher({ id: publisherId, username }) {
       console.log(publisherId);
       console.log(username);
-      console.log(this.publishersTemp);
       console.log(".......................................................")
 
-      if (publisherId === this.localUUID || this.publishersTemp.includes(publisherId)) return;
-      this.publishersTemp.push(publisherId)
+      if (publisherId === this.localUUID || this.publishers.has(publisherId)) return;
       this.publishers.set(publisherId, { username });
       await this.subscribeOnce({ id: publisherId, username });
     }
@@ -346,6 +329,7 @@
       switch (message.type) {
         case clientMethods.welcome:
           this.localUUID = message.id;
+          this.configuration = message.configuration;
           break;
         case clientMethods.answer:
           this.handleAnswer(message);
@@ -355,7 +339,7 @@
           break;
         case clientMethods.subscriptionAnswer:
           this.handleSubscriptionAnswer(message)
-          break
+          break;
         case clientMethods.newPublisher:
           this.handleNewPublisher(message).then(_ => {});
           break;
@@ -366,9 +350,7 @@
     }
 
     removePublisher({ id }) {
-      if (!this.publishers.has(id) && !this.publishersTemp.includes(id)) return;
-      this.publishers.delete(id);
-      this.publishersTemp = this.publishersTemp.filter(item => item !== id);
+      if (!this.publishers.has(id)) return;
       this.publishers.delete(id);
 
       document.getElementById(`remote_${id}`).srcObject.getTracks().forEach(track => track.stop());
@@ -376,7 +358,8 @@
     }
 
     async connect() { // Produce media
-      await this.initWebSocket()
+      await this.initWebSocket();
+      // await delay(600);
 
       const role = roleSelect.value;
       if (role === roles.speaker) {
@@ -400,7 +383,7 @@
     }
 
     createPeer(isConnect) {
-      this.localPeer = new RTCPeerConnection(configuration);
+      this.localPeer = new RTCPeerConnection(this.configuration);
       DEFINED_PEERS++;
       this.localPeer.onicecandidate = (e) => this.handleIceCandidate(e);
       this.localPeer.onnegotiationneeded = () => this.handleNegotiation(isConnect);
@@ -527,7 +510,7 @@
       analyser.smoothingTimeConstant = smoothing;
       fftBins = new Float32Array(analyser.fftSize);
 
-      //WebRTC Stream
+      // WebRTC Stream
       sourceNode = audioContext00.createMediaStreamSource(stream);
       threshold = threshold || -50;
 
@@ -616,13 +599,16 @@
   }
 
 
+
   const connectButton = document.getElementById('connect');
   const sfuClient = new SimpleSFUClient();
 
   connectButton.addEventListener('click', () => sfuClient.connect())
+  setRoleButton.addEventListener('click', () => sfuClient.setRole())
+
   sfuClient.on('onConnected', () => {
+    connectButton.disabled = true;
     setRoleButton.disabled = false;
-    setRoleButton.addEventListener('click', () => sfuClient.setRole())
   });
 </script>
 </body>
