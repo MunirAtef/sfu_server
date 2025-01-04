@@ -1,4 +1,3 @@
-
 const roles = {
   speaker: 'speaker',
   listener: 'listener'
@@ -49,16 +48,43 @@ const serverMethods = {
 //   ]
 // }
 
+// const configuration = {
+//   iceServers: [
+//     // {urls: "stun:stun.relay.metered.ca:80"},
+//     {
+//       urls: "turn:relay1.expressturn.com:3478",
+//       username: "941563fc8b5b8e8c1a5424cb",
+//       credential: "spoMfi7SzsfGP9bk"
+//     }
+//   ]
+// }
+
 const configuration = {
   iceServers: [
-    // {urls: "stun:stun.relay.metered.ca:80"},
+    {urls: "stun:stun.relay.metered.ca:80"},
     {
-      urls: "turn:relay1.expressturn.com:3478",
-      username: "941563fc8b5b8e8c1a5424cb",
-      credential: "spoMfi7SzsfGP9bk"
+      urls: "turn:global.relay.metered.ca:80",
+      username: "dc16b025e16eda1d65172f72",
+      credential: "p0dgfIDK1+r+w+9g"
+    },
+    {
+      urls: "turn:global.relay.metered.ca:80?transport=tcp",
+      username: "dc16b025e16eda1d65172f72",
+      credential: "p0dgfIDK1+r+w+9g"
+    },
+    {
+      urls: "turn:global.relay.metered.ca:443",
+      username: "dc16b025e16eda1d65172f72",
+      credential: "p0dgfIDK1+r+w+9g"
+    },
+    {
+      urls: "turns:global.relay.metered.ca:443?transport=tcp",
+      username: "dc16b025e16eda1d65172f72",
+      credential: "p0dgfIDK1+r+w+9g"
     }
   ]
 }
+
 
 // const configuration = {
 //   iceServers: [
@@ -70,8 +96,6 @@ const configuration = {
 //     }
 //   ]
 // }
-
-
 
 
 module.exports = {
